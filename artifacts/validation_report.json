@@ -34,5 +34,9 @@
     "capital-loss": 0.0,
     "hours-per-week": 0.0,
     "native-country": 0.56
+  },
+  "target_dist": {
+    "<=50K": 37155,
+    ">50K": 11687
   }
 }
