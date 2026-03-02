@@ -9,6 +9,7 @@ import git
 from pathlib import Path
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.metrics import (
     accuracy_score, f1_score, roc_auc_score, classification_report
 )
@@ -28,7 +29,7 @@ DEFAULT_PARAMS = {
 def get_git_commit() -> str:
     """Obtiene el hash del commit actual de Git para trazabilidad."""
     try:
-        repo   = git.Repo(search_parent_directories=True)
+        repo = git.Repo(search_parent_directories=True)
         return repo.head.object.hexsha[:7]
     except Exception:
         return "no-git"
@@ -36,7 +37,7 @@ def get_git_commit() -> str:
 def train(X_train, y_train, X_test, y_test, params: dict):
     """
     Entrena el modelo y registra todo en MLflow.
-    Estructura exacta de la diapositiva.
+    Incluye manejo de desbalance con sample_weight.
     """
     mlflow.set_experiment("adult-income")
 
@@ -47,6 +48,7 @@ def train(X_train, y_train, X_test, y_test, params: dict):
         mlflow.set_tags({
             "dataset_version": "Adult UCI ID=2",
             "git_commit":      get_git_commit(),
+            "author":          "MLOps Pipeline",
         })
 
         # Modelo
@@ -60,8 +62,12 @@ def train(X_train, y_train, X_test, y_test, params: dict):
         )
         logger.info(f"F1 CV: {scores.mean():.4f} +/- {scores.std():.4f}")
 
-        # Entrenamiento final
-        clf.fit(X_train, y_train)
+        # Manejo de desbalance con sample_weight
+        sample_weights = compute_sample_weight(class_weight="balanced", y=y_train)
+
+        # Entrenamiento final con pesos
+        clf.fit(X_train, y_train, sample_weight=sample_weights)
+        logger.info("Modelo entrenado con manejo de desbalance.")
 
         # Metricas en test
         y_pred  = clf.predict(X_test)
@@ -72,16 +78,16 @@ def train(X_train, y_train, X_test, y_test, params: dict):
             "f1_macro": round(float(f1_score(y_test, y_pred, average="macro")), 4),
             "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
             "auc_roc":  round(float(roc_auc_score(y_test, y_proba)), 4),
+            "f1_class0": round(float(f1_score(y_test, y_pred, pos_label=0)), 4),
+            "f1_class1": round(float(f1_score(y_test, y_pred, pos_label=1)), 4),
         }
 
         # Registrar params en MLflow
         mlflow.log_params(params)
 
         # Registrar metricas en MLflow
-        mlflow.log_metric("f1_cv",    metrics["f1_cv"])
-        mlflow.log_metric("f1_macro", metrics["f1_macro"])
-        mlflow.log_metric("accuracy", metrics["accuracy"])
-        mlflow.log_metric("auc_roc",  metrics["auc_roc"])
+        for nombre, valor in metrics.items():
+            mlflow.log_metric(nombre, valor)
 
         # Registrar modelo en MLflow (model/ + conda.yaml + MLmodel)
         mlflow.sklearn.log_model(clf, "model")
@@ -95,6 +101,15 @@ def train(X_train, y_train, X_test, y_test, params: dict):
         with open("artifacts/metrics.json", "w") as f:
             json.dump(metrics, f, indent=2)
 
+        # Guardar importancia de variables
+        feature_importance = dict(zip(
+            pd.read_parquet("data/processed/features_processed.parquet").columns,
+            clf.feature_importances_
+        ))
+        with open("artifacts/feature_importance.json", "w") as f:
+            json.dump(feature_importance, f, indent=2)
+        logger.info("Importancia de variables guardada en artifacts/feature_importance.json")
+
         # Reporte completo
         print("\n===== ARTEFACTOS REGISTRADOS POR MLFLOW =====")
         print("  model/    → Modelo serializado + conda.yaml + MLmodel")
@@ -107,7 +122,7 @@ def train(X_train, y_train, X_test, y_test, params: dict):
             print(f"  {k}: {v}")
 
         print(f"\n{classification_report(y_test, y_pred, target_names=['<=50K', '>50K'])}")
-        logger.info("Artefactos: models/model.pkl | artifacts/metrics.json")
+        logger.info("Artefactos: models/model.pkl | artifacts/metrics.json | artifacts/feature_importance.json")
 
         return metrics
 
@@ -144,3 +159,4 @@ if __name__ == "__main__":
     logger.info(f"Train: {X_train.shape[0]} | Test: {X_test.shape[0]}")
 
     train(X_train, y_train, X_test, y_test, params)
+
