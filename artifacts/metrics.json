@@ -1,5 +1,8 @@
 {
-  "accuracy": 0.8389,
+  "f1_cv": 0.814,
   "f1_macro": 0.8024,
-  "auc_roc": 0.9289
+  "accuracy": 0.8389,
+  "auc_roc": 0.9289,
+  "f1_class0": 0.8873,
+  "f1_class1": 0.7175
 }
