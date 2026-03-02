@@ -39,10 +39,10 @@ def run_features(input_dir: str = "data/interim") -> dict:
     # Leer datos imputados (generados por validate.py)
     path = Path(input_dir)
     X = pd.read_parquet(path / "features_imputadas.parquet")
-    y = pd.read_parquet("data/raw/targets.parquet")
+    y = pd.read_parquet("data/interim/targets_clean.parquet")
 
     # Binarizar target: >50K=1, <=50K=0
-    y_binary = (y.iloc[:, 0].str.strip().str.replace(".", "", regex=False) == ">50K").astype(int)
+    y_binary = (y.iloc[:, 0] == ">50K").astype(int)
 
     # Log transform a capital-gain y capital-loss
     for col in LOG_COLS:
